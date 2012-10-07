@@ -6,7 +6,6 @@
 #include "gitstat.h"
 
 struct fg_stats {
-  // Branch name foll	owed by the object name.
   char *path;
   // Name of the object inside the branch.
   char *object;
@@ -342,28 +341,137 @@ fg_file_byrepo(fg_stats **out, git_repository *repo, const char *path)
   return exit;
 }
 
-const char *fg_file_path(fg_stats *file)
+const char *fg_file_path(const fg_stats *file)
 {
   return file->path;
 }
 
-int fg_file_is_branch_root(fg_stats *file)
+int fg_file_is_branch_root(const fg_stats *file)
 {
   return file->object != NULL && file->object[0] == '\0';
 }
 
-int fg_file_has_oid(fg_stats *file)
+int fg_file_has_oid(const fg_stats *file)
 {
   return file->object != NULL;
 }
 
-const git_oid *fg_file_oid(fg_stats *file)
+const git_oid *fg_file_oid(const fg_stats *file)
 {
   assert(fg_file_has_oid(file));
   return &file->oid;
 }
 
-struct stat *fg_file_stat(fg_stats *file)
+const struct stat *fg_file_stat(const fg_stats *file)
 {
   return &file->stbuf;
 }
+
+int
+fg_file_cpy(void *dest, git_repository *repo, const fg_stats *file, size_t fileOffset, size_t size)
+{
+	git_blob *blob = NULL;
+	if (git_blob_lookup(&blob, repo, fg_file_oid(file)))
+		return -1;
+	assert(fileOffset + size < git_blob_rawsize(blob));
+	memcpy(dest, git_blob_rawcontent(blob) + fileOffset, size);
+	git_blob_free(blob);
+	return 0;
+}
+
+struct list_tree_payload
+{
+	const fg_stats *dir;
+	git_repository *repo;
+	fg_list callback;
+	void *payload;
+};
+
+int
+fg_file_list_tree(const char *root, const git_tree_entry *entry, void *payload)
+{
+	struct list_tree_payload *lt_payload = (struct list_tree_payload *) payload;
+	const char *name = git_tree_entry_name(entry);
+	if (lt_payload->callback(lt_payload->dir, lt_payload->repo, name, lt_payload->payload))
+		return -1;
+
+	// Skip deep traversal.
+	return 1;
+}
+
+int
+fg_file_list_branch(const char *branch, git_branch_t type, void *payload)
+{
+	struct list_tree_payload *lt_payload = (struct list_tree_payload *) payload;
+	const char *path = fg_file_path(lt_payload->dir);
+	size_t len = strlen(path);
+
+	if (path[0] == '/') {
+		path += 1;
+		len -= 1;
+	}
+	int match = (len == 0) ? 0 : strncmp(branch, path, len);
+
+	// :FIXME: Remove duplicated prefixes and unify this lookup with
+	// fg_match_branch_prefix.
+	if (match == 0 && (len == 0 || branch[len] == '/')) {
+		const char *name = branch + len;
+
+		// Move after the name pointer after the slash.
+		if (len != 0)
+			name += 1;
+
+		const char *slash = name;
+		slash = strchr(slash, '/');
+		if (slash == NULL) {
+			if (lt_payload->callback(lt_payload->dir, lt_payload->repo, name, lt_payload->payload))
+				return -1;
+		} else {
+			// Silent failure :(
+			len = slash - name;
+			if (len > 1024)
+				return 0;
+
+			char copy[len + 1];
+			strncpy(copy, name, len);
+			copy[len] = '\0';
+
+			if (lt_payload->callback(lt_payload->dir, lt_payload->repo, copy, lt_payload->payload))
+				return -1;
+		}
+	}
+	return 0;
+}
+
+int
+fg_file_list(const fg_stats *file, git_repository *repo, fg_list callback, void *payload)
+{
+	struct list_tree_payload lt_payload = {
+		.dir = file,
+		.repo = repo,
+		.callback = callback,
+		.payload = payload
+	};
+
+	// List relative directories.
+	callback(file, repo, ".", payload);
+	callback(file, repo, "..", payload);
+
+	if (fg_file_has_oid(file)) {
+		git_tree *tree = NULL;
+		if (git_tree_lookup(&tree, repo, fg_file_oid(file)))
+			return -1;
+
+		// List filenames in the tree.
+		int error = git_tree_walk(tree, &fg_file_list_tree, GIT_TREEWALK_PRE, &lt_payload);
+
+		git_tree_free(tree);
+		return (error < 0) ? -2 : 0;
+	} else {
+		// List branches under the current branch prefix.
+		int error = git_branch_foreach(repo, GIT_BRANCH_LOCAL, &fg_file_list_branch, &lt_payload);
+
+		return (error != 0) ? -2 : 0;
+	}
+}
+

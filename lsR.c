@@ -10,6 +10,11 @@ int print_oid(const char *prefix, const git_oid *oid) {
   return printf("%s oid: %s\n", prefix, git_oid_tostr(oidstr, -1, oid));
 }
 
+int listDir(const fg_stats *dir, git_repository *repo, const char *relName, void *payload){
+  printf("\t%s\n", relName);
+  return 0;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -35,6 +40,11 @@ main(int argc, char **argv)
           st->st_mode,
           st->st_nlink,
           st->st_size);
+
+      if (S_ISDIR(st->st_mode)) {
+        printf("-> Is a directory containing:\n");
+        fg_file_list(file, repo, &listDir, NULL);
+      }
     } else {
       printf("%s: not found [error %d]\n", argv[i], found);
     }
