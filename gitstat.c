@@ -373,7 +373,7 @@ fg_file_cpy(void *dest, git_repository *repo, const fg_stats *file, size_t fileO
 	git_blob *blob = NULL;
 	if (git_blob_lookup(&blob, repo, fg_file_oid(file)))
 		return -1;
-	assert(fileOffset + size < git_blob_rawsize(blob));
+	assert(fileOffset + size <= git_blob_rawsize(blob));
 	memcpy(dest, git_blob_rawcontent(blob) + fileOffset, size);
 	git_blob_free(blob);
 	return 0;
