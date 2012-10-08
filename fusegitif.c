@@ -26,6 +26,13 @@ fg_getattr(const char *path, struct stat *stbuf)
 		return -ENOENT;
 
 	memcpy(stbuf, fg_file_stat(file), sizeof(struct stat));
+
+	// Copy current user info, should get this out of the the stat of the
+	// repository instead of fuse_get_context.
+	struct fuse_context* context = fuse_get_context();
+	stbuf->st_uid = context->uid;
+	stbuf->st_gid = context->gid;
+
 	fg_stats_free(file);
 	return 0;
 }
