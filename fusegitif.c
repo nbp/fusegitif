@@ -50,8 +50,11 @@ static int
 fg_readdir_cb(const fg_stats *dir, git_repository *repo, const char *relName, void *payload)
 {
 	struct readdir_payload *rd_payload = (struct readdir_payload *) payload;
-	struct stat *st = NULL; // Not needed, but will cause more lookup.
+	const struct stat *st = NULL; // Not needed, but will cause more lookup.
 	int offset = 0; // Offset of the current entry ?!
+
+  if (strcmp(".", relName) == 0)
+    st = fg_file_stat(dir);
 	return rd_payload->filler(rd_payload->buf, relName, st, offset);
 }
 
@@ -191,10 +194,10 @@ static struct fuse_opt fg_cli[] =
 };
 
 static struct fuse_operations fg_oper = {
-	.getattr	= fg_getattr,
-	.readdir	= fg_readdir,
-	.open	= fg_open,
-	.read	= fg_read,
+	.getattr = fg_getattr,
+	.readdir = fg_readdir,
+	.open = fg_open,
+	.read = fg_read,
 };
 
 int main(int argc, char *argv[])

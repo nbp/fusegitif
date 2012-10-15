@@ -68,7 +68,7 @@ fg_file_byentry(fg_stats **out, git_repository *repo, git_tree_entry *entry)
   }
 
   // Recover the file size of any plain file.
-  size_t size = 0;
+  size_t size = 4096;
   if (mode == GIT_FILEMODE_BLOB ||
       mode == GIT_FILEMODE_BLOB_EXECUTABLE ||
       mode == GIT_FILEMODE_LINK) {
